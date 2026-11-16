@@ -14,6 +14,7 @@
   <img alt="Swift" src="https://img.shields.io/badge/Swift-SwiftUI-F05138?logo=swift&logoColor=white">
   <img alt="Apple Silicon" src="https://img.shields.io/badge/Apple%20Silicon-optimizado-6E40C9">
   <img alt="Sin Xcode" src="https://img.shields.io/badge/compila-sin%20Xcode-2ea44f">
+  <a href="LICENSE"><img alt="Licencia MIT" src="https://img.shields.io/badge/licencia-MIT-blue"></a>
 </p>
 
 <p align="center">
@@ -162,6 +163,10 @@ tools/
 ├── separate.py                 Separación de voz (htdemucs)
 └── icon/make-icon.swift        Genera el icono
 ```
+
+## 📄 Licencia
+
+[MIT](LICENSE): puedes usar, modificar y compartir el código libremente, manteniendo el aviso de copyright.
 
 ## 🙏 Créditos
 
