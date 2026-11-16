@@ -68,7 +68,6 @@ struct TopBar: View {
             RecordButton()
             status
             Spacer(minLength: 8)
-            VocalButton()
             SettingsMenu()
         }
     }
@@ -116,61 +115,6 @@ struct TopBar: View {
                 }
             }
         }
-    }
-}
-
-/// Quitar la voz (Demucs). Alterna original / instrumental y muestra el progreso.
-struct VocalButton: View {
-    @EnvironmentObject var model: AppModel
-
-    var body: some View {
-        if model.duration > 0 && !model.isRecording {
-            switch model.separation {
-            case .running(let message):
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(message).font(.caption.weight(.semibold)).lineLimit(1)
-                        if let start = model.separationStart {
-                            TimelineView(.periodic(from: start, by: 1)) { ctx in
-                                Text("\(Int(ctx.date.timeIntervalSince(start))) s")
-                                    .font(.caption2.monospacedDigit()).foregroundStyle(Theme.textDim)
-                            }
-                        }
-                    }
-                    Button { model.cancelSeparation() } label: { Image(systemName: "xmark.circle.fill") }
-                        .buttonStyle(.plain).foregroundStyle(Theme.textDim)
-                        .help("Cancelar")
-                }
-                .padding(.horizontal, 12).frame(height: 36)
-                .background(Capsule().fill(Theme.panelRaised))
-            case .noVocals:
-                pill(icon: "music.note", text: "Sin voz", active: false)
-                    .opacity(0.6)
-                    .help("Esta grabación no tiene voz: se mantiene el audio original")
-            default:
-                let instrumental = model.stemMode == .instrumental
-                Button { model.toggleInstrumental() } label: {
-                    pill(icon: instrumental ? "music.note" : "mic.slash.fill",
-                         text: instrumental ? "Instrumental" : "Quitar voz",
-                         active: instrumental)
-                }
-                .buttonStyle(PressableStyle())
-                .help(instrumental
-                      ? "Escuchando el instrumental · clic para volver al original"
-                      : "Separa la voz con IA (Demucs) y deja solo el instrumental")
-            }
-        }
-    }
-
-    private func pill(icon: String, text: String, active: Bool) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon).font(.system(size: 12, weight: .semibold))
-            Text(text).font(.caption.weight(.semibold)).lineLimit(1)
-        }
-        .foregroundStyle(active ? Color.black : Theme.text)
-        .padding(.horizontal, 12).frame(height: 36)
-        .background(Capsule().fill(active ? Theme.slice(5) : Theme.panelRaised))
     }
 }
 

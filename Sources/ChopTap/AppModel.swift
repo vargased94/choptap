@@ -45,16 +45,6 @@ final class AppModel: ObservableObject {
     @Published var playingSlice: Int?
     var loopingSlice: Int? { isPlaying && player.looping ? playingSlice : nil }
 
-    // Separación de voz
-    enum StemMode { case original, instrumental }
-    enum SeparationState: Equatable { case idle, running(String), ready, noVocals, failed(String) }
-    @Published var stemMode: StemMode = .original
-    @Published var separation: SeparationState = .idle
-    @Published var separationStart: Date?
-    private var originalWave: WaveData?
-    private var instrumentalWave: WaveData?
-    private var instrumentalURL: URL?
-    private var separationProcess: Process?
     @Published var exportOptions = AudioTools.ExportOptions()
 
     let framesPerPeak = SystemAudioRecorder.framesPerPeak
@@ -70,15 +60,6 @@ final class AppModel: ObservableObject {
     static let slicesFolder = workFolder.appendingPathComponent("Slices", isDirectory: true)
 
     var isRecording: Bool { recState != .idle }
-    /// Audio que se escucha y se exporta: el original o el instrumental.
-    var activeURL: URL? { stemMode == .instrumental ? (instrumentalURL ?? currentURL) : currentURL }
-
-    static let demucsEnv: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("ChopTap/demucs-env", isDirectory: true)
-    var separatorInstalled: Bool {
-        FileManager.default.isExecutableFile(atPath: Self.demucsEnv.appendingPathComponent("bin/python").path)
-            && FileManager.default.fileExists(atPath: Self.demucsEnv.appendingPathComponent("separate.py").path)
-    }
     var duration: Double { Double(totalFrames) / sampleRate }
     var peaksPerSecond: Double { sampleRate / Double(framesPerPeak) }
 
@@ -153,7 +134,6 @@ final class AppModel: ObservableObject {
 
         peaks = []
         wave = nil
-        resetStems()
         totalFrames = 0
         markers = []
         selectedSlice = nil
@@ -201,8 +181,7 @@ final class AppModel: ObservableObject {
                 currentURL = nil
                 peaks = []
                 wave = nil
-                resetStems()
-                totalFrames = 0
+                        totalFrames = 0
                 if !wasArmedOnly {
                     errorMessage = "No se grabó nada: no sonó ningún audio mientras grababas."
                 }
@@ -221,7 +200,6 @@ final class AppModel: ObservableObject {
     func load(_ url: URL) {
         guard !isRecording else { return }
         stopPlayback()
-        resetStems()
         currentURL = url
         markers = []
         selectedSlice = nil
@@ -233,7 +211,6 @@ final class AppModel: ObservableObject {
                 await MainActor.run {
                     guard self.currentURL == url else { return }
                     self.wave = result
-                    self.originalWave = result
                     self.peaks = []
                     self.totalFrames = AVAudioFramePosition(result.frameCount)
                     self.sampleRate = result.sampleRate
@@ -404,7 +381,7 @@ final class AppModel: ObservableObject {
     }
 
     func play(from start: Double, to end: Double, loop: Bool) {
-        guard let url = activeURL, !isRecording, totalFrames > 0, end > start else { return }
+        guard let url = currentURL, !isRecording, totalFrames > 0, end > start else { return }
         let startFrame = AVAudioFramePosition(start * sampleRate)
         let count = AVAudioFrameCount(max(1, (end - start) * sampleRate))
         playingSlice = nil
@@ -458,7 +435,7 @@ final class AppModel: ObservableObject {
 
     /// Exporta una slice a WAV en la carpeta de clips (reutiliza el archivo si nada cambió).
     func exportSlice(_ index: Int) -> URL? {
-        guard canExport, let url = activeURL, slices.indices.contains(index) else { return nil }
+        guard canExport, let url = currentURL, slices.indices.contains(index) else { return nil }
         let r = slices[index]
         let startFrame = AVAudioFramePosition(r.lowerBound * sampleRate)
         let count = AVAudioFrameCount((r.upperBound - r.lowerBound) * sampleRate)
@@ -468,8 +445,7 @@ final class AppModel: ObservableObject {
         }
 
         let stamp = Self.stampFormatter.string(from: Date())
-        let suffix = stemMode == .instrumental && instrumentalURL != nil ? " Inst" : ""
-        let name = String(format: "Chop %02d%@ %@-%03d.wav", index + 1, suffix, stamp, Int(r.lowerBound * 1000) % 1000)
+        let name = String(format: "Chop %02d %@-%03d.wav", index + 1, stamp, Int(r.lowerBound * 1000) % 1000)
         let dest = Self.slicesFolder.appendingPathComponent(name)
         do {
             try AudioTools.exportWAV(from: url, start: startFrame, count: count, to: dest, options: exportOptions)
@@ -499,140 +475,6 @@ final class AppModel: ObservableObject {
     /// (macOS la limpia sola) por si la app destino los referencia en vez de copiarlos.
     func cleanUp() {
         if let url = currentURL { try? FileManager.default.removeItem(at: url) }
-    }
-
-    // MARK: - Separación de voz (Demucs)
-
-    private func resetStems() {
-        separationProcess?.terminate()
-        separationProcess = nil
-        if let url = instrumentalURL { try? FileManager.default.removeItem(at: url) }
-        instrumentalURL = nil
-        instrumentalWave = nil
-        originalWave = nil
-        stemMode = .original
-        separation = .idle
-        separationStart = nil
-    }
-
-    /// Alterna entre el audio original y el instrumental (separándolo la primera vez).
-    func toggleInstrumental() {
-        guard currentURL != nil, !isRecording else { return }
-        if stemMode == .instrumental { setStem(.original); return }
-        if instrumentalWave != nil { setStem(.instrumental); return }
-        if case .running = separation { return }
-        runSeparation()
-    }
-
-    private func setStem(_ mode: StemMode) {
-        let wasLooping = loopingSlice
-        stopPlayback()
-        stemMode = mode
-        wave = mode == .instrumental ? (instrumentalWave ?? originalWave) : originalWave
-        if let i = wasLooping { playSlice(i, loop: true) }
-    }
-
-    func cancelSeparation() {
-        separationProcess?.terminate()
-        separationProcess = nil
-        separation = .idle
-        separationStart = nil
-    }
-
-    private func runSeparation() {
-        guard let source = currentURL else { return }
-        guard separatorInstalled else {
-            separation = .failed("El separador de voces no está instalado")
-            errorMessage = "Falta instalar el separador de voces. Ejecuta tools/setup-demucs.sh en la carpeta del proyecto."
-            return
-        }
-        let id = UUID().uuidString.prefix(8)
-        let instURL = Self.workFolder.appendingPathComponent("instrumental-\(id).wav")
-        let vocURL = Self.workFolder.appendingPathComponent("voz-\(id).wav")
-
-        let process = Process()
-        process.executableURL = Self.demucsEnv.appendingPathComponent("bin/python")
-        process.arguments = [Self.demucsEnv.appendingPathComponent("separate.py").path, source.path, instURL.path, vocURL.path]
-        var env = ProcessInfo.processInfo.environment
-        env["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
-        process.environment = env
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-
-        separation = .running("Cargando modelo…")
-        separationStart = Date()
-        separationProcess = process
-
-        let handle = pipe.fileHandleForReading
-        Task.detached(priority: .userInitiated) { [weak self] in
-            var lastStatus: [String: Any] = [:]
-            var buffer = Data()
-            do {
-                try process.run()
-            } catch {
-                await MainActor.run {
-                    self?.separation = .failed(error.localizedDescription)
-                    self?.errorMessage = "No se pudo iniciar el separador: \(error.localizedDescription)"
-                }
-                return
-            }
-            while true {
-                let chunk = handle.availableData
-                if chunk.isEmpty { break }
-                buffer.append(chunk)
-                while let nl = buffer.firstIndex(of: 0x0A) {
-                    let line = buffer[buffer.startIndex..<nl]
-                    buffer.removeSubrange(buffer.startIndex...nl)
-                    guard let obj = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { continue }
-                    lastStatus = obj
-                    let status = obj["status"] as? String ?? ""
-                    let device = obj["device"] as? String ?? ""
-                    let message: String? = {
-                        switch status {
-                        case "loading": return "Cargando modelo…"
-                        case "separating": return device == "mps" ? "Separando la voz (GPU)…" : "Separando la voz (CPU)…"
-                        case "retry": return "Reintentando con CPU…"
-                        default: return nil
-                        }
-                    }()
-                    if let message {
-                        await MainActor.run {
-                            guard let self, case .running = self.separation else { return }
-                            self.separation = .running(message)
-                        }
-                    }
-                }
-            }
-            process.waitUntilExit()
-            let status = lastStatus["status"] as? String ?? ""
-            let errorText = lastStatus["error"] as? String
-            let wave: WaveData? = status == "done" ? try? WaveData(url: instURL) : nil
-            await MainActor.run {
-                guard let self, self.separationProcess === process else { return }
-                self.separationProcess = nil
-                self.separationStart = nil
-                try? FileManager.default.removeItem(at: vocURL)
-                switch status {
-                case "done" where wave != nil:
-                    self.instrumentalURL = instURL
-                    self.instrumentalWave = wave
-                    self.separation = .ready
-                    self.setStem(.instrumental)
-                case "no_vocals":
-                    try? FileManager.default.removeItem(at: instURL)
-                    self.separation = .noVocals
-                default:
-                    if process.terminationReason == .uncaughtSignal {
-                        self.separation = .idle // cancelado
-                    } else {
-                        let msg = errorText ?? "El separador terminó con un error"
-                        self.separation = .failed(msg)
-                        self.errorMessage = "No se pudo quitar la voz: \(msg)"
-                    }
-                }
-            }
-        }
     }
 
     // MARK: - Teclado (estilo Slicex)

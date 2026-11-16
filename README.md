@@ -31,7 +31,6 @@
 | 👂 **Arranca sola** | Se arma y empieza a grabar en cuanto detecta audio (con pre-roll para no perder el ataque). Puede parar sola tras unos segundos de silencio. |
 | ✂️ **Chops estilo Slicex** | Corta a mano con doble clic o al vuelo con la tecla **C** mientras suena. Cada chop tiene su color y su número. |
 | 🔁 **Loop por chop** | Repite cualquier chop sin cortes para comprobar que encaja. |
-| 🎤 **Quitar la voz con IA** | Separa voz e instrumental con [Demucs](https://github.com/facebookresearch/demucs) usando la GPU. Si la canción no tiene voz, lo detecta. |
 | 🖐️ **Arrastrar y soltar** | Cada pad se arrastra como WAV a Koala Sampler, Ableton, Logic, FL Studio o el Finder. O todos a la vez. |
 | 🔍 **Zoom fino** | Pellizco en el trackpad hasta ver las muestras individuales, para cortar justo donde quieres. |
 
@@ -55,14 +54,6 @@ cp -R build/ChopTap.app /Applications/
 Abre **ChopTap** desde Aplicaciones y, si quieres, ánclala al Dock (clic derecho → Opciones → Mantener en el Dock).
 
 > **Permiso de audio:** la primera vez que grabes, macOS pedirá permiso. Actívalo en **Ajustes del Sistema → Privacidad y seguridad → Grabación de pantalla y audio del sistema → Solo grabación de audio del sistema**, y vuelve a abrir la app.
-
-### Opcional: quitar la voz
-
-Instala Demucs una sola vez (~430 MB en `~/Library/Application Support/ChopTap`):
-
-```bash
-./tools/setup-demucs.sh
-```
 
 ## 🎛️ Cómo se usa
 
@@ -90,11 +81,10 @@ Instala Demucs una sola vez (~430 MB en `~/Library/Application Support/ChopTap`)
 - **Dos dedos** en horizontal para desplazarte.
 - La **mini vista** de abajo muestra toda la grabación: arrástrala para moverte, doble clic para ver todo.
 
-### 4. Escucha, loopea y quita la voz
+### 4. Escucha y loopea
 
 - **Clic en un pad** o teclas **1–9** → dispara el chop.
 - Botón **🔁** del pad (o **L**) → lo repite en loop.
-- **Quitar voz** → separa la voz con IA y deja el instrumental. Pulsa **Instrumental** para alternar con el original.
 
 ### 5. Arrástralo a tu sampler
 
@@ -154,13 +144,11 @@ Sources/ChopTap/
 ├── WaveData.swift              Forma de onda multirresolución (mín/máx + muestras)
 ├── WaveformView.swift          Onda, cortes, zoom y mini vista general
 ├── ContentView.swift           Interfaz: barra superior, transporte y pads
-├── AppModel.swift              Estado, chops, reproducción, exportación y Demucs
+├── AppModel.swift              Estado, chops, reproducción y exportación
 ├── AudioTools.swift            Lectura, exportación WAV y reproductor
 ├── DragOut.swift               Arrastrar archivos a otras apps
 └── TrackpadCatcher.swift       Pellizco y scroll del trackpad
 tools/
-├── setup-demucs.sh             Instala Demucs en un entorno aislado
-├── separate.py                 Separación de voz (htdemucs)
 └── icon/make-icon.swift        Genera el icono
 ```
 
@@ -170,7 +158,6 @@ tools/
 
 ## 🙏 Créditos
 
-- Separación de voz: [Demucs](https://github.com/facebookresearch/demucs) (modelo `htdemucs`) de Meta AI, licencia MIT.
 - Inspirada en el flujo de trabajo de Slicex y Koala Sampler.
 
 > ChopTap está firmada ad-hoc. Si al recompilar macOS te vuelve a pedir el permiso, crea un certificado de firma de código llamado **"ChopTap Dev"** en Acceso a Llaveros: `build.sh` lo usará y el permiso se conservará.
