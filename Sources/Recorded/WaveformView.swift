@@ -60,7 +60,7 @@ struct WaveformView: View {
                 updateCursor()
             }
             .background(
-                TrackpadCatcher(
+                SnapshotMode.enabled ? nil : TrackpadCatcher(
                     onMagnify: { m, x in handleMagnify(m, x: x, width: width) },
                     onScroll: { dx, dy, precise, flags, x in handleScroll(dx: dx, dy: dy, precise: precise, flags: flags, x: x, width: width) }
                 )

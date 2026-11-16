@@ -3,11 +3,30 @@ import SwiftUI
 
 /// Envuelve contenido SwiftUI en una vista AppKit que inicia un arrastre de archivo real
 /// (NSURL en el pasteboard), compatible con Finder, Koala Sampler, DAWs, etc.
-struct DragOut<Content: View>: NSViewRepresentable {
+struct DragOut<Content: View>: View {
     /// Se llama al empezar el arrastre; devuelve los archivos a arrastrar (los puede crear en ese momento).
     let makeFiles: () -> [URL]
     var onClick: (() -> Void)?
     @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        if SnapshotMode.enabled {
+            content() // para renderizar capturas sin vistas nativas
+        } else {
+            DragOutRepresentable(makeFiles: makeFiles, onClick: onClick, content: content)
+        }
+    }
+}
+
+/// Activo solo al generar las capturas del README (las vistas AppKit no se pueden renderizar a imagen).
+enum SnapshotMode {
+    static var enabled = false
+}
+
+private struct DragOutRepresentable<Content: View>: NSViewRepresentable {
+    let makeFiles: () -> [URL]
+    var onClick: (() -> Void)?
+    var content: () -> Content
 
     func makeNSView(context: Context) -> DragHostingView<Content> {
         let view = DragHostingView(rootView: content())

@@ -206,6 +206,21 @@ struct SettingsMenu: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
+        if SnapshotMode.enabled {
+            settingsIcon
+        } else {
+            menu
+        }
+    }
+
+    private var settingsIcon: some View {
+        Image(systemName: "slider.horizontal.3")
+            .font(.system(size: 15, weight: .medium))
+            .frame(width: 36, height: 36)
+            .background(Circle().fill(Theme.panelRaised))
+    }
+
+    private var menu: some View {
         Menu {
             Section("Grabación") {
                 Toggle("Empezar al detectar audio", isOn: $model.recordingOptions.waitForAudio)
@@ -401,6 +416,12 @@ struct PadsSection: View {
                 }
                 .padding(12)
                 .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.panel))
+            } else if enabled && SnapshotMode.enabled {
+                // Para capturas: sin ScrollView (el renderizador no dibuja su contenido)
+                HStack(spacing: 10) {
+                    DragAllPad()
+                    ForEach(model.slices.indices, id: \.self) { i in PadView(index: i) }
+                }
             } else if enabled {
                 ScrollView(.vertical) {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 104, maximum: 180), spacing: 10)], spacing: 10) {
