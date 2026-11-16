@@ -35,7 +35,7 @@ final class SystemAudioRecorder: NSObject {
     private var aggregateID = AudioObjectID(kAudioObjectUnknown)
     private var ioProcID: AudioDeviceIOProcID?
     private var tapFormat: AVAudioFormat?
-    private let queue = DispatchQueue(label: "recorded.audio.capture", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "choptap.audio.capture", qos: .userInitiated)
     private var silenceTimer: DispatchSourceTimer?
 
     // Accedidos solo desde `queue`
@@ -91,7 +91,7 @@ final class SystemAudioRecorder: NSObject {
         let exclude = Self.ownAudioProcessObject().map { [$0] } ?? []
         let description = CATapDescription(stereoGlobalTapButExcludeProcesses: exclude)
         description.uuid = UUID()
-        description.name = "Recorded"
+        description.name = "ChopTap"
         description.isPrivate = true
         description.muteBehavior = .unmuted
 
@@ -119,9 +119,9 @@ final class SystemAudioRecorder: NSObject {
         // Por defecto el dispositivo de captura contiene solo el tap y trabaja a su frecuencia nativa
         // (48 kHz): una conversión de frecuencia menos que incluyendo la salida (medido: más fiel).
         // Si no se puede crear, se usa el modo con la salida como reloj.
-        let tapOnly = ProcessInfo.processInfo.environment["RECORDED_TAP_MODE"] != "output"
+        let tapOnly = ProcessInfo.processInfo.environment["CHOPTAP_TAP_MODE"] != "output"
         var aggregate: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "Recorded Tap",
+            kAudioAggregateDeviceNameKey: "ChopTap",
             kAudioAggregateDeviceUIDKey: UUID().uuidString,
             kAudioAggregateDeviceIsPrivateKey: true,
             kAudioAggregateDeviceIsStackedKey: false,

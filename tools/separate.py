@@ -1,4 +1,4 @@
-"""Separa voz e instrumental con Demucs (htdemucs) para Recorded.
+"""Separa voz e instrumental con Demucs (htdemucs) para ChopTap.
 
 Uso: python separate.py entrada salida_instrumental.wav salida_voz.wav
 Imprime líneas JSON de progreso y un resultado final:

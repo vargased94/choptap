@@ -1,8 +1,8 @@
 #!/bin/zsh
-# Instala Demucs (separación de voces) en un entorno Python aislado para Recorded.
+# Instala Demucs (separación de voces) en un entorno Python aislado para ChopTap.
 set -euo pipefail
-ENV="$HOME/Library/Application Support/Recorded/demucs-env"
-PY="${RECORDED_PYTHON:-/usr/bin/python3}"
+ENV="$HOME/Library/Application Support/ChopTap/demucs-env"
+PY="${CHOPTAP_PYTHON:-/usr/bin/python3}"
 mkdir -p "$(dirname "$ENV")"
 if [ ! -x "$ENV/bin/python" ]; then
   "$PY" -m venv "$ENV"

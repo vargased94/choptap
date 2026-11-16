@@ -66,7 +66,7 @@ final class AppModel: ObservableObject {
     private var maxLevelSeen: Float = 0
 
     /// Todo es temporal: la grabación actual y los WAV que se generan al arrastrar.
-    static let workFolder = FileManager.default.temporaryDirectory.appendingPathComponent("Recorded", isDirectory: true)
+    static let workFolder = FileManager.default.temporaryDirectory.appendingPathComponent("ChopTap", isDirectory: true)
     static let slicesFolder = workFolder.appendingPathComponent("Slices", isDirectory: true)
 
     var isRecording: Bool { recState != .idle }
@@ -74,7 +74,7 @@ final class AppModel: ObservableObject {
     var activeURL: URL? { stemMode == .instrumental ? (instrumentalURL ?? currentURL) : currentURL }
 
     static let demucsEnv: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("Recorded/demucs-env", isDirectory: true)
+        .appendingPathComponent("ChopTap/demucs-env", isDirectory: true)
     var separatorInstalled: Bool {
         FileManager.default.isExecutableFile(atPath: Self.demucsEnv.appendingPathComponent("bin/python").path)
             && FileManager.default.fileExists(atPath: Self.demucsEnv.appendingPathComponent("separate.py").path)
@@ -171,7 +171,7 @@ final class AppModel: ObservableObject {
                 try? await Task.sleep(for: .seconds(8))
                 guard let self, self.isRecording, self.maxLevelSeen == 0 else { return }
                 self.needsPermission = true
-                self.errorMessage = "No llega nada de audio. Si está sonando algo, activa Recorded en Ajustes → Privacidad y seguridad → Grabación de pantalla y audio del sistema → \"Solo grabación de audio del sistema\", y reabre la app."
+                self.errorMessage = "No llega nada de audio. Si está sonando algo, activa ChopTap en Ajustes → Privacidad y seguridad → Grabación de pantalla y audio del sistema → \"Solo grabación de audio del sistema\", y reabre la app."
             }
             if recordingOptions.waitForAudio {
                 recState = .armed

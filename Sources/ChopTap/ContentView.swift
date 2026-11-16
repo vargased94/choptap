@@ -111,7 +111,7 @@ struct TopBar: View {
                 }
             } else {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Recorded").font(.title3.weight(.bold))
+                    Text("ChopTap").font(.title3.weight(.bold))
                     Text("Graba el audio del Mac y córtalo").font(.caption).foregroundStyle(Theme.textDim)
                 }
             }

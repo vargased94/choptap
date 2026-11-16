@@ -2,12 +2,12 @@ import AppKit
 import SwiftUI
 
 @main
-struct RecordedApp: App {
+struct ChopTapApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject private var model = AppModel()
 
     var body: some Scene {
-        WindowGroup("Recorded") {
+        WindowGroup("ChopTap") {
             ContentView()
                 .environmentObject(model)
                 .preferredColorScheme(.dark)
@@ -32,7 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         runSelfTestIfRequested()
     }
 
-    /// Modo de prueba de calidad: `Recorded --selftest <salida.caf> <segundos>`
+    /// Modo de prueba de calidad: `ChopTap --selftest <salida.caf> <segundos>`
     /// Graba el audio del sistema durante N segundos con el mismo grabador de la app y sale.
     private let selfTestRecorder = SystemAudioRecorder()
 

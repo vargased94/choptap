@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="Resources/AppIcon.png" width="150" alt="Icono de Recorded">
+  <img src="Resources/AppIcon.png" width="150" alt="Icono de ChopTap">
 </p>
 
-<h1 align="center">Recorded</h1>
+<h1 align="center">ChopTap</h1>
 
 <p align="center">
   <b>Graba cualquier sonido de tu Mac, córtalo en chops y arrástralo directo a tu sampler.</b><br>
@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/screenshot.png" alt="Recorded: forma de onda troceada en chops de colores y pads arrastrables">
+  <img src="docs/images/screenshot.png" alt="ChopTap: forma de onda troceada en chops de colores y pads arrastrables">
 </p>
 
 ---
@@ -46,19 +46,19 @@ xcode-select --install   # solo si no las tienes
 Clona, compila e instala:
 
 ```bash
-git clone https://github.com/vargased94/recorded-app.git
-cd recorded-app
+git clone https://github.com/vargased94/choptap.git
+cd choptap
 ./build.sh
-cp -R build/Recorded.app /Applications/
+cp -R build/ChopTap.app /Applications/
 ```
 
-Abre **Recorded** desde Aplicaciones y, si quieres, ánclala al Dock (clic derecho → Opciones → Mantener en el Dock).
+Abre **ChopTap** desde Aplicaciones y, si quieres, ánclala al Dock (clic derecho → Opciones → Mantener en el Dock).
 
 > **Permiso de audio:** la primera vez que grabes, macOS pedirá permiso. Actívalo en **Ajustes del Sistema → Privacidad y seguridad → Grabación de pantalla y audio del sistema → Solo grabación de audio del sistema**, y vuelve a abrir la app.
 
 ### Opcional: quitar la voz
 
-Instala Demucs una sola vez (~430 MB en `~/Library/Application Support/Recorded`):
+Instala Demucs una sola vez (~430 MB en `~/Library/Application Support/ChopTap`):
 
 ```bash
 ./tools/setup-demucs.sh
@@ -134,7 +134,7 @@ Desde el botón ⚙️ (arriba a la derecha):
 
 ## 🔬 Calidad de audio
 
-Recorded captura el audio con **Core Audio Process Taps**, antes del volumen del sistema y de los altavoces o auriculares. Medido con una señal de prueba (barrido de 20 Hz a 20 kHz):
+ChopTap captura el audio con **Core Audio Process Taps**, antes del volumen del sistema y de los altavoces o auriculares. Medido con una señal de prueba (barrido de 20 Hz a 20 kHz):
 
 - El nivel grabado es idéntico al original y no hay recortes ni huecos.
 - La respuesta en frecuencia es plana (±0,01 dB entre 50 Hz y 15 kHz).
@@ -143,13 +143,13 @@ Recorded captura el audio con **Core Audio Process Taps**, antes del volumen del
 Puedes repetir la prueba con:
 
 ```bash
-build/Recorded.app/Contents/MacOS/Recorded --selftest /tmp/prueba.caf 8
+build/ChopTap.app/Contents/MacOS/ChopTap --selftest /tmp/prueba.caf 8
 ```
 
 ## 🗂️ Estructura
 
 ```
-Sources/Recorded/
+Sources/ChopTap/
 ├── SystemAudioRecorder.swift   Captura con Core Audio Process Taps, detección y auto-stop
 ├── WaveData.swift              Forma de onda multirresolución (mín/máx + muestras)
 ├── WaveformView.swift          Onda, cortes, zoom y mini vista general
@@ -173,4 +173,4 @@ tools/
 - Separación de voz: [Demucs](https://github.com/facebookresearch/demucs) (modelo `htdemucs`) de Meta AI, licencia MIT.
 - Inspirada en el flujo de trabajo de Slicex y Koala Sampler.
 
-> Recorded está firmada ad-hoc. Si al recompilar macOS te vuelve a pedir el permiso, crea un certificado de firma de código llamado **"Recorded Dev"** en Acceso a Llaveros: `build.sh` lo usará y el permiso se conservará.
+> ChopTap está firmada ad-hoc. Si al recompilar macOS te vuelve a pedir el permiso, crea un certificado de firma de código llamado **"ChopTap Dev"** en Acceso a Llaveros: `build.sh` lo usará y el permiso se conservará.

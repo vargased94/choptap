@@ -1,4 +1,4 @@
-// Genera el icono de Recorded (1024×1024 PNG).
+// Genera el icono de ChopTap (1024×1024 PNG).
 // Uso: swiftc -parse-as-library tools/icon/make-icon.swift -o /tmp/make-icon && /tmp/make-icon salida.png
 import AppKit
 import SwiftUI
