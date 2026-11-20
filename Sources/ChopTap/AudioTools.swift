@@ -1,4 +1,5 @@
 import AVFoundation
+import os
 
 enum AudioTools {
     /// Calcula picos (máximo absoluto por bloque de `framesPerPeak` frames) leyendo el archivo por partes.
@@ -96,39 +97,123 @@ enum AudioTools {
 /// Reproductor sencillo para escuchar la selección (con bucle opcional).
 final class ClipPlayer {
     private let engine = AVAudioEngine()
-    private let node = AVAudioPlayerNode()
-    private var connectedFormat: AVAudioFormat?
+    private var sourceNode: AVAudioSourceNode?
+    private var nodeFormat: AVAudioFormat?
+
+    // Estado compartido con el hilo de audio (protegido por `lock`)
+    private let lock: UnsafeMutablePointer<os_unfair_lock> = {
+        let p = UnsafeMutablePointer<os_unfair_lock>.allocate(capacity: 1)
+        p.initialize(to: os_unfair_lock())
+        return p
+    }()
+    private var buffer: AVAudioPCMBuffer?
+    private var position = 0
+    private var rendered = 0
+    private var loopFlag = false
+    private var active = false
+    private var processor: LoFiProcessor?
 
     private(set) var startSeconds: Double = 0
     private(set) var lengthSeconds: Double = 0
-    private(set) var looping = false
-    var isPlaying: Bool { node.isPlaying }
+    private var sampleRate: Double = 48_000
 
-    init() { engine.attach(node) }
-
-    func play(_ buffer: AVAudioPCMBuffer, startSeconds: Double, loop: Bool) throws {
-        stop()
-        if connectedFormat != buffer.format {
-            engine.disconnectNodeOutput(node)
-            engine.connect(node, to: engine.mainMixerNode, format: buffer.format)
-            connectedFormat = buffer.format
-        }
-        if !engine.isRunning { try engine.start() }
-        self.startSeconds = startSeconds
-        self.lengthSeconds = Double(buffer.frameLength) / buffer.format.sampleRate
-        self.looping = loop
-        node.scheduleBuffer(buffer, at: nil, options: loop ? [.loops] : [], completionHandler: nil)
-        node.play()
+    deinit {
+        lock.deinitialize(count: 1)
+        lock.deallocate()
     }
+
+    private func withLock<T>(_ body: () -> T) -> T {
+        os_unfair_lock_lock(lock)
+        defer { os_unfair_lock_unlock(lock) }
+        return body()
+    }
+
+    var looping: Bool { withLock { loopFlag } }
+    var isPlaying: Bool { withLock { active } }
 
     /// Tiempo transcurrido desde que empezó a sonar el buffer.
     var elapsed: Double? {
-        guard node.isPlaying, let nodeTime = node.lastRenderTime,
-              let t = node.playerTime(forNodeTime: nodeTime) else { return nil }
-        return max(0, Double(t.sampleTime) / t.sampleRate)
+        withLock { active ? Double(rendered) / sampleRate : nil }
+    }
+
+    /// Reproduce `buffer` aplicando el lo-fi en tiempo real (se puede cambiar mientras suena).
+    func play(_ buffer: AVAudioPCMBuffer, startSeconds: Double, loop: Bool,
+              lofi: LoFiSettings = LoFiSettings(), seed: UInt64 = 1) throws {
+        prepareNode(for: buffer.format)
+        let processor = LoFiProcessor(settings: lofi, channels: Int(buffer.format.channelCount),
+                                      sampleRate: buffer.format.sampleRate, seed: seed)
+        withLock {
+            self.buffer = buffer
+            self.position = 0
+            self.rendered = 0
+            self.loopFlag = loop
+            self.processor = processor
+            self.active = buffer.frameLength > 0
+        }
+        self.startSeconds = startSeconds
+        self.lengthSeconds = Double(buffer.frameLength) / buffer.format.sampleRate
+        self.sampleRate = buffer.format.sampleRate
+        if !engine.isRunning { try engine.start() }
+    }
+
+    /// Cambia el lo-fi al instante, sin reiniciar la reproducción.
+    func updateLoFi(_ settings: LoFiSettings) {
+        withLock { processor?.update(settings) }
     }
 
     func stop() {
-        node.stop()
+        withLock {
+            active = false
+            buffer = nil
+        }
+    }
+
+    private func prepareNode(for format: AVAudioFormat) {
+        if sourceNode != nil, nodeFormat == format { return }
+        if let old = sourceNode {
+            engine.disconnectNodeOutput(old)
+            engine.detach(old)
+        }
+        let node = AVAudioSourceNode(format: format) { [unowned self] _, _, frameCount, audioBufferList -> OSStatus in
+            self.render(frameCount: Int(frameCount), into: audioBufferList)
+            return noErr
+        }
+        engine.attach(node)
+        engine.connect(node, to: engine.mainMixerNode, format: format)
+        sourceNode = node
+        nodeFormat = format
+    }
+
+    /// Hilo de audio: lee del buffer, aplica el lo-fi y escribe en la salida.
+    private func render(frameCount: Int, into abl: UnsafeMutablePointer<AudioBufferList>) {
+        let out = UnsafeMutableAudioBufferListPointer(abl)
+        os_unfair_lock_lock(lock)
+        defer { os_unfair_lock_unlock(lock) }
+
+        guard active, let buffer, let src = buffer.floatChannelData, let processor else {
+            for b in out { if let d = b.mData { memset(d, 0, Int(b.mDataByteSize)) } }
+            return
+        }
+        let length = Int(buffer.frameLength)
+        let channels = min(out.count, Int(buffer.format.channelCount))
+        for f in 0..<frameCount {
+            if position >= length {
+                if loopFlag {
+                    position = 0
+                } else {
+                    for c in 0..<out.count {
+                        out[c].mData?.assumingMemoryBound(to: Float.self)[f] = 0
+                    }
+                    active = false
+                    continue
+                }
+            }
+            processor.process(src: UnsafePointer(src), length: length, index: position, loop: loopFlag)
+            for c in 0..<channels {
+                out[c].mData?.assumingMemoryBound(to: Float.self)[f] = processor.output[c]
+            }
+            position += 1
+            rendered += 1
+        }
     }
 }

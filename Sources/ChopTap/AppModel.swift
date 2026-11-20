@@ -51,6 +51,7 @@ final class AppModel: ObservableObject {
     @Published var lofi = LoFiSettings() {
         didSet {
             guard lofi != oldValue else { return }
+            player.updateLoFi(lofi)   // se oye al instante, incluso mientras suena
             if let data = try? JSONEncoder().encode(lofi) { UserDefaults.standard.set(data, forKey: "lofi") }
         }
     }
@@ -146,10 +147,9 @@ final class AppModel: ObservableObject {
         lofi = s
     }
 
-    /// Si un chop está sonando en loop, lo reinicia para escuchar el cambio al momento.
+    /// El reproductor aplica el lo-fi en tiempo real: los cambios se oyen al instante sin reiniciar.
     func applyLoFiToPlayback() {
-        if let i = loopingSlice { playSlice(i, loop: true) }
-        else if isPlaying, let i = playingSlice { playSlice(i, loop: false) }
+        player.updateLoFi(lofi)
     }
 
     private func saveOptions() {
@@ -428,9 +428,8 @@ final class AppModel: ObservableObject {
         let count = AVAudioFrameCount(max(1, (end - start) * sampleRate))
         playingSlice = nil
         do {
-            let raw = try AudioTools.read(url, from: startFrame, count: count)
-            let buffer = lofi.enabled ? LoFi.process(raw, settings: lofi, seed: UInt64(max(0, startFrame))) : raw
-            try player.play(buffer, startSeconds: start, loop: loop)
+            let buffer = try AudioTools.read(url, from: startFrame, count: count)
+            try player.play(buffer, startSeconds: start, loop: loop, lofi: lofi, seed: UInt64(max(0, startFrame)))
             isPlaying = true
             playhead = start
             timer?.invalidate()

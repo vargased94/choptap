@@ -31,7 +31,7 @@
 | 👂 **Arranca sola** | Se arma y empieza a grabar en cuanto detecta audio (con pre-roll para no perder el ataque). Puede parar sola tras unos segundos de silencio. |
 | ✂️ **Chops estilo Slicex** | Corta a mano con doble clic o al vuelo con la tecla **C** mientras suena. Cada chop tiene su color y su número. |
 | 🔁 **Loop por chop** | Repite cualquier chop sin cortes para comprobar que encaja. |
-| 📼 **Sonido lo-fi de sampler clásico** | Vinilo estilo SP-303/404, 12 bits a 26 kHz con aliasing, cinta y más: se aplica al escuchar y al exportar. |
+| 📼 **Sonido lo-fi de sampler clásico** | Vinilo estilo SP-303/404, 12 bits a 26 kHz con aliasing, cinta y más. En tiempo real: cámbialo mientras suena. |
 | 🖐️ **Arrastrar y soltar** | Cada pad se arrastra como WAV a Koala Sampler, Ableton, Logic, FL Studio o el Finder. O todos a la vez. |
 | 🔍 **Zoom fino** | Pellizco en el trackpad hasta ver las muestras individuales, para cortar justo donde quieres. |
 
@@ -93,7 +93,7 @@ Abre **ChopTap** desde Aplicaciones y, si quieres, ánclala al Dock (clic derech
   <img src="docs/images/lofi.png" width="760" alt="Panel LO-FI con presets y controles">
 </p>
 
-Activa **LO-FI** y elige un preset; lo escuchas al momento y los chops que arrastras salen con el efecto (llevan "LoFi" en el nombre).
+Activa **LO-FI** y elige un preset. El efecto va **en tiempo real**: pon la canción o un chop en loop y cambia de preset o mueve los controles mientras suena para comparar cuál te gusta más. Los chops que arrastras salen exactamente como los escuchas (llevan "LoFi" en el nombre).
 
 | Preset | Inspirado en |
 |---|---|

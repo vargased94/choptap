@@ -76,8 +76,8 @@ struct LoFiSettings: Codable, Hashable {
     var cacheKey: String { enabled ? "\(hashValue)" : "off" }
 }
 
-/// Procesador offline: devuelve un buffer nuevo con el efecto aplicado.
-/// Es determinista (misma entrada y semilla → mismo resultado) para que lo que oyes sea lo que exportas.
+/// Procesado offline (exportar): usa el mismo procesador que la reproducción en tiempo real,
+/// así lo que oyes es exactamente lo que exportas. Determinista para una misma semilla.
 enum LoFi {
     static func process(_ input: AVAudioPCMBuffer, settings s: LoFiSettings, seed: UInt64 = 1) -> AVAudioPCMBuffer {
         guard s.enabled, let src = input.floatChannelData,
@@ -85,134 +85,195 @@ enum LoFi {
               let dst = out.floatChannelData else { return input }
         let frames = Int(input.frameLength)
         let channels = Int(input.format.channelCount)
-        let sr = input.format.sampleRate
         out.frameLength = input.frameLength
-        guard frames > 0 else { return out }
-
-        var rng = SplitMix64(seed: seed)
-
-        // 1. Wow & flutter: línea de retardo modulada (vinilo/cinta girando irregular)
-        let wowDepth = s.wow * 0.0022 * sr           // hasta ~2,2 ms de variación
-        let flutterDepth = s.wow * 0.00025 * sr
-        let baseDelay = wowDepth + flutterDepth + 2
-        let wowRate = 0.55, flutterRate = 6.3
-        let wowPhase0 = Double(rng.next() % 1000) / 1000 * 2 * .pi
-        var wowRandom = 0.0
-
-        // 2. Antialias (si no queremos aliasing) y reducción de muestreo (sample & hold)
-        let reduceRate = s.sampleRate < sr - 1
-        let holdStep = reduceRate ? s.sampleRate / sr : 1
-        var preFilters = (0..<channels).map { _ in Biquad.lowpass(freq: min(s.sampleRate * 0.45, sr * 0.45), q: 0.707, sr: sr) }
-        var preFilters2 = preFilters
-
-        // 3. Bits
-        let quantize = s.bits < 15.9
-        let levels = pow(2.0, s.bits - 1)
-
-        // 5. Compresión estilo Vinyl Sim: rápida, enlazada en estéreo, con ganancia de compensación
-        let threshold = pow(10, (-6 - 24 * s.compression) / 20)
-        let ratio = 1 + 9 * s.compression
-        let attack = exp(-1 / (0.0008 * sr))
-        let release = exp(-1 / ((0.06 + 0.12 * (1 - s.compression)) * sr))
-        let makeup = s.compression > 0 ? pow(1 / threshold, 1 - 1 / ratio) * 0.55 : 1
-        var envelope = 0.0
-
-        // 6. Saturación
-        let driveGain = 1 + s.drive * 5
-        let driveNorm = 1 / tanh(driveGain)
-
-        // 7. Filtro de salida (reconstrucción) de 4 polos
-        let cutoff = min(s.filterHz, sr * 0.45)
-        var postA = (0..<channels).map { _ in Biquad.lowpass(freq: cutoff, q: 0.54, sr: sr) }
-        var postB = (0..<channels).map { _ in Biquad.lowpass(freq: cutoff, q: 1.31, sr: sr) }
-        let useOutputFilter = s.filterHz < 19_500
-
-        // Ruido: siseo filtrado + crujidos esporádicos
-        var hissFilter = Biquad.lowpass(freq: 5_000, q: 0.7, sr: sr)
-        var hissHP = Biquad.highpass(freq: 400, q: 0.7, sr: sr)
-        var crackle = 0.0
-        let crackleRate = s.noise * 9 / sr            // crujidos por muestra
-        let hissLevel = s.noise * 0.012
-        let crackleLevel = s.noise * 0.25
-
-        var held = [Double](repeating: 0, count: channels)
-        var holdPhase = 1.0
-        var tmp = [Double](repeating: 0, count: channels)
-
+        let processor = LoFiProcessor(settings: s, channels: channels, sampleRate: input.format.sampleRate, seed: seed)
         for i in 0..<frames {
-            // Wow/flutter
-            if s.wow > 0 {
-                let t = Double(i) / sr
-                wowRandom += (Double(rng.nextUnit()) - 0.5) * 0.002
-                wowRandom *= 0.9995
-                let mod = sin(2 * .pi * wowRate * t + wowPhase0) * wowDepth
-                    + sin(2 * .pi * flutterRate * t) * flutterDepth
-                    + wowRandom * wowDepth
-                let pos = Double(i) - baseDelay - mod
-                let p0 = Int(floor(pos)), frac = pos - floor(pos)
-                for c in 0..<channels {
-                    let a = (p0 >= 0 && p0 < frames) ? Double(src[c][p0]) : 0
-                    let b = (p0 + 1 >= 0 && p0 + 1 < frames) ? Double(src[c][p0 + 1]) : 0
-                    tmp[c] = a + (b - a) * frac
-                }
-            } else {
-                for c in 0..<channels { tmp[c] = Double(src[c][i]) }
-            }
-
-            // Reducción de muestreo
-            if reduceRate {
-                if !s.aliasing {
-                    for c in 0..<channels { tmp[c] = preFilters2[c].process(preFilters[c].process(tmp[c])) }
-                }
-                holdPhase += holdStep
-                if holdPhase >= 1 {
-                    holdPhase -= 1
-                    for c in 0..<channels { held[c] = tmp[c] }
-                }
-                for c in 0..<channels { tmp[c] = held[c] }
-            }
-
-            // Bits (truncado sin dither, como los convertidores antiguos)
-            if quantize {
-                for c in 0..<channels { tmp[c] = (tmp[c] * levels).rounded(.towardZero) / levels }
-            }
-
-            // Ruido de vinilo (antes de la compresión: el compresor también lo "bombea")
-            if s.noise > 0 {
-                let hiss = hissHP.process(hissFilter.process(Double(rng.nextUnit()) * 2 - 1)) * hissLevel
-                if Double(rng.nextUnit()) < crackleRate {
-                    crackle = (Double(rng.nextUnit()) * 2 - 1) * crackleLevel
-                }
-                let click = crackle
-                crackle *= 0.62
-                for c in 0..<channels { tmp[c] += hiss + click * (c == 0 ? 1 : 0.85) }
-            }
-
-            // Compresión
-            if s.compression > 0 {
-                var peak = 0.0
-                for c in 0..<channels { peak = max(peak, abs(tmp[c])) }
-                let coeff = peak > envelope ? attack : release
-                envelope = coeff * envelope + (1 - coeff) * peak
-                var gain = 1.0
-                if envelope > threshold { gain = pow(threshold / envelope, 1 - 1 / ratio) }
-                for c in 0..<channels { tmp[c] *= gain * makeup }
-            }
-
-            // Saturación (siempre un poco de tanh para no pasar de 0 dBFS)
-            for c in 0..<channels {
-                tmp[c] = s.drive > 0 ? tanh(tmp[c] * driveGain) * driveNorm : softClip(tmp[c])
-            }
-
-            // Filtro de salida
-            if useOutputFilter {
-                for c in 0..<channels { tmp[c] = postB[c].process(postA[c].process(tmp[c])) }
-            }
-
-            // Limitador suave final: nunca pasa de 0 dBFS
-            for c in 0..<channels { dst[c][i] = Float(softClip(tmp[c] * 0.98)) }
+            processor.process(src: UnsafePointer(src), length: frames, index: i, loop: false)
+            for c in 0..<channels { dst[c][i] = processor.output[c] }
         }
         return out
+    }
+}
+
+/// Cadena lo-fi con estado, muestra a muestra. Se puede cambiar de ajustes en cualquier momento
+/// (`update`) sin reiniciar: los filtros conservan su estado y el cambio es instantáneo y sin cortes.
+/// Etapas: wow/flutter → antialias opcional → sample & hold → bits → ruido → compresión → saturación → filtro de salida.
+final class LoFiProcessor {
+    private(set) var settings: LoFiSettings
+    let channels: Int
+    let sampleRate: Double
+    /// Muestra resultante de cada canal tras `process`.
+    private(set) var output: [Float]
+
+    // Parámetros derivados
+    private var wowDepth = 0.0, flutterDepth = 0.0, baseDelay = 2.0
+    private let wowRate = 0.55, flutterRate = 6.3
+    private var reduceRate = false, holdStep = 1.0
+    private var quantize = false, levels = 32768.0
+    private var threshold = 1.0, ratio = 1.0, attack = 0.0, release = 0.0, makeup = 1.0
+    private var driveGain = 1.0, driveNorm = 1.0
+    private var useOutputFilter = false
+    private var crackleRate = 0.0, hissLevel = 0.0, crackleLevel = 0.0
+
+    // Estado
+    private var rng: SplitMix64
+    private let wowPhase0: Double
+    private var wowRandom = 0.0
+    private var counter = 0.0
+    private var pre1: [Biquad], pre2: [Biquad], postA: [Biquad], postB: [Biquad]
+    private var hissLP: Biquad, hissHP: Biquad
+    private var crackle = 0.0
+    private var held: [Double]
+    private var holdPhase = 1.0
+    private var envelope = 0.0
+    private var tmp: [Double]
+
+    init(settings: LoFiSettings, channels: Int, sampleRate: Double, seed: UInt64) {
+        self.settings = settings
+        self.channels = channels
+        self.sampleRate = sampleRate
+        var r = SplitMix64(seed: seed)
+        wowPhase0 = Double(r.next() % 1000) / 1000 * 2 * .pi
+        rng = r
+        let identity = Biquad()
+        pre1 = Array(repeating: identity, count: channels)
+        pre2 = pre1; postA = pre1; postB = pre1
+        hissLP = Biquad.lowpass(freq: 5_000, q: 0.7, sr: sampleRate)
+        hissHP = Biquad.highpass(freq: 400, q: 0.7, sr: sampleRate)
+        held = Array(repeating: 0, count: channels)
+        tmp = Array(repeating: 0, count: channels)
+        output = Array(repeating: 0, count: channels)
+        configure()
+    }
+
+    /// Cambia los ajustes al vuelo conservando el estado interno.
+    func update(_ s: LoFiSettings) {
+        guard s != settings else { return }
+        settings = s
+        configure()
+    }
+
+    private func configure() {
+        let s = settings, sr = sampleRate
+        wowDepth = s.wow * 0.0022 * sr
+        flutterDepth = s.wow * 0.00025 * sr
+        baseDelay = 0.0024 * sr + 0.00025 * sr + 2   // retardo fijo: el máximo posible, para que mover el wow no salte
+
+        reduceRate = s.sampleRate < sr - 1
+        holdStep = reduceRate ? s.sampleRate / sr : 1
+        let pre = Biquad.lowpass(freq: min(s.sampleRate * 0.45, sr * 0.45), q: 0.707, sr: sr)
+        for c in 0..<channels { pre1[c].setCoefficients(from: pre); pre2[c].setCoefficients(from: pre) }
+
+        quantize = s.bits < 15.9
+        levels = pow(2.0, s.bits - 1)
+
+        threshold = pow(10, (-6 - 24 * s.compression) / 20)
+        ratio = 1 + 9 * s.compression
+        attack = exp(-1 / (0.0008 * sr))
+        release = exp(-1 / ((0.06 + 0.12 * (1 - s.compression)) * sr))
+        makeup = s.compression > 0 ? pow(1 / threshold, 1 - 1 / ratio) * 0.55 : 1
+
+        driveGain = 1 + s.drive * 5
+        driveNorm = 1 / tanh(driveGain)
+
+        let cutoff = min(s.filterHz, sr * 0.45)
+        let a = Biquad.lowpass(freq: cutoff, q: 0.54, sr: sr), b = Biquad.lowpass(freq: cutoff, q: 1.31, sr: sr)
+        for c in 0..<channels { postA[c].setCoefficients(from: a); postB[c].setCoefficients(from: b) }
+        useOutputFilter = s.filterHz < 19_500
+
+        crackleRate = s.noise * 9 / sr
+        hissLevel = s.noise * 0.012
+        crackleLevel = s.noise * 0.25
+    }
+
+    @inline(__always)
+    private func read(_ src: UnsafePointer<UnsafeMutablePointer<Float>>, _ c: Int, _ idx: Int, _ length: Int, _ loop: Bool) -> Double {
+        if idx >= 0 && idx < length { return Double(src[c][idx]) }
+        guard loop, length > 0 else { return 0 }
+        let wrapped = ((idx % length) + length) % length
+        return Double(src[c][wrapped])
+    }
+
+    /// Procesa el frame `index` de `src` y deja el resultado en `output`.
+    func process(src: UnsafePointer<UnsafeMutablePointer<Float>>, length: Int, index i: Int, loop: Bool) {
+        let s = settings
+        guard s.enabled else {
+            for c in 0..<channels { output[c] = src[c][i] }
+            counter += 1
+            return
+        }
+
+        // Wow/flutter
+        if s.wow > 0 {
+            let t = counter / sampleRate
+            wowRandom += (Double(rng.nextUnit()) - 0.5) * 0.002
+            wowRandom *= 0.9995
+            let mod = sin(2 * .pi * wowRate * t + wowPhase0) * wowDepth
+                + sin(2 * .pi * flutterRate * t) * flutterDepth
+                + wowRandom * wowDepth
+            let pos = Double(i) - baseDelay - mod
+            let p0 = Int(pos.rounded(.down)), frac = pos - pos.rounded(.down)
+            for c in 0..<channels {
+                let a = read(src, c, p0, length, loop), b = read(src, c, p0 + 1, length, loop)
+                tmp[c] = a + (b - a) * frac
+            }
+        } else {
+            for c in 0..<channels { tmp[c] = Double(src[c][i]) }
+        }
+        counter += 1
+
+        // Reducción de muestreo (sample & hold), con antialias opcional
+        if reduceRate {
+            if !s.aliasing {
+                for c in 0..<channels { tmp[c] = pre2[c].process(pre1[c].process(tmp[c])) }
+            }
+            holdPhase += holdStep
+            if holdPhase >= 1 {
+                holdPhase -= 1
+                for c in 0..<channels { held[c] = tmp[c] }
+            }
+            for c in 0..<channels { tmp[c] = held[c] }
+        }
+
+        // Bits (truncado sin dither, como los convertidores antiguos)
+        if quantize {
+            for c in 0..<channels { tmp[c] = (tmp[c] * levels).rounded(.towardZero) / levels }
+        }
+
+        // Ruido de vinilo (antes de la compresión: el compresor también lo "bombea")
+        if s.noise > 0 {
+            let hiss = hissHP.process(hissLP.process(Double(rng.nextUnit()) * 2 - 1)) * hissLevel
+            if Double(rng.nextUnit()) < crackleRate {
+                crackle = (Double(rng.nextUnit()) * 2 - 1) * crackleLevel
+            }
+            let click = crackle
+            crackle *= 0.62
+            for c in 0..<channels { tmp[c] += hiss + click * (c == 0 ? 1 : 0.85) }
+        }
+
+        // Compresión estilo Vinyl Sim: rápida y enlazada en estéreo
+        if s.compression > 0 {
+            var peak = 0.0
+            for c in 0..<channels { peak = max(peak, abs(tmp[c])) }
+            let coeff = peak > envelope ? attack : release
+            envelope = coeff * envelope + (1 - coeff) * peak
+            var gain = 1.0
+            if envelope > threshold { gain = pow(threshold / envelope, 1 - 1 / ratio) }
+            for c in 0..<channels { tmp[c] *= gain * makeup }
+        }
+
+        // Saturación
+        for c in 0..<channels {
+            tmp[c] = s.drive > 0 ? tanh(tmp[c] * driveGain) * driveNorm : Self.softClip(tmp[c])
+        }
+
+        // Filtro de salida (reconstrucción) de 4 polos
+        if useOutputFilter {
+            for c in 0..<channels { tmp[c] = postB[c].process(postA[c].process(tmp[c])) }
+        }
+
+        // Limitador suave final: nunca pasa de 0 dBFS
+        for c in 0..<channels { output[c] = Float(Self.softClip(tmp[c] * 0.98)) }
     }
 
     private static func softClip(_ x: Double) -> Double {
@@ -241,6 +302,11 @@ struct Biquad {
         f.b0 = (1 + c) / 2 / a0; f.b1 = -(1 + c) / a0; f.b2 = (1 + c) / 2 / a0
         f.a1 = -2 * c / a0; f.a2 = (1 - alpha) / a0
         return f
+    }
+
+    /// Cambia los coeficientes conservando el estado (sin clics al mover un control).
+    mutating func setCoefficients(from other: Biquad) {
+        b0 = other.b0; b1 = other.b1; b2 = other.b2; a1 = other.a1; a2 = other.a2
     }
 
     mutating func process(_ x: Double) -> Double {
