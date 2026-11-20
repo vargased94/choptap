@@ -400,8 +400,32 @@ final class AppModel: ObservableObject {
 
     // MARK: - Reproducción
 
+    /// Play/stop. Si lo último terminó solo, play lo repite (el chop o la canción desde donde empezó).
     func togglePlayback() {
-        if isPlaying { stopPlayback() } else { play(from: playhead >= duration - 0.01 ? 0 : playhead, to: duration, loop: false) }
+        if isPlaying { stopPlayback(); return }
+        if let finished = lastFinished {
+            lastFinished = nil
+            if let i = finished.slice, slices.indices.contains(i) {
+                playSlice(i)
+                return
+            }
+            play(from: finished.start, to: duration, loop: false)
+            return
+        }
+        play(from: playhead >= duration - 0.05 ? 0 : playhead, to: duration, loop: false)
+    }
+
+    /// Lo último que sonó hasta el final por sí solo (para repetirlo con play).
+    private var lastFinished: (start: Double, slice: Int?)?
+
+    /// La reproducción llegó al final: el cursor vuelve al inicio de lo que sonó.
+    private func finishPlayback() {
+        let start = player.startSeconds
+        let slice = playingSlice
+        stopPlayback()
+        playhead = start
+        if let slice { selectedSlice = slice }
+        lastFinished = (start, slice)
     }
 
     func playSlice(_ index: Int, loop forceLoop: Bool? = nil) {
@@ -427,6 +451,7 @@ final class AppModel: ObservableObject {
         let startFrame = AVAudioFramePosition(start * sampleRate)
         let count = AVAudioFrameCount(max(1, (end - start) * sampleRate))
         playingSlice = nil
+        lastFinished = nil
         do {
             let buffer = try AudioTools.read(url, from: startFrame, count: count)
             try player.play(buffer, startSeconds: start, loop: loop, lofi: lofi, seed: UInt64(max(0, startFrame)))
@@ -444,14 +469,14 @@ final class AppModel: ObservableObject {
     private func tick() {
         guard isPlaying else { return }
         guard let elapsed = player.elapsed else {
-            if !player.isPlaying { stopPlayback() }
+            if !player.isPlaying { finishPlayback() }
             return
         }
         if player.looping {
             playhead = player.startSeconds + elapsed.truncatingRemainder(dividingBy: max(player.lengthSeconds, 0.001))
         } else if elapsed >= player.lengthSeconds {
-            playhead = player.startSeconds + player.lengthSeconds
-            stopPlayback()
+            finishPlayback()
+            return
         } else {
             playhead = player.startSeconds + elapsed
         }
