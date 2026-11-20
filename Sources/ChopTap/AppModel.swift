@@ -47,6 +47,16 @@ final class AppModel: ObservableObject {
 
     @Published var exportOptions = AudioTools.ExportOptions()
 
+    // Lo-fi (estilo samplers clásicos): se aplica al escuchar y al exportar
+    @Published var lofi = LoFiSettings() {
+        didSet {
+            guard lofi != oldValue else { return }
+            if let data = try? JSONEncoder().encode(lofi) { UserDefaults.standard.set(data, forKey: "lofi") }
+        }
+    }
+    /// Panel de controles lo-fi desplegado.
+    @Published var showLoFiControls = false
+
     let framesPerPeak = SystemAudioRecorder.framesPerPeak
     private let recorder = SystemAudioRecorder()
     private let player = ClipPlayer()
@@ -108,6 +118,38 @@ final class AppModel: ObservableObject {
         if d.object(forKey: "thresholdDB") != nil { recordingOptions.thresholdDB = d.float(forKey: "thresholdDB") }
         let stop = d.double(forKey: "autoStopSeconds")
         recordingOptions.autoStopSeconds = stop > 0 ? stop : nil
+        if let data = d.data(forKey: "lofi"), let saved = try? JSONDecoder().decode(LoFiSettings.self, from: data) {
+            lofi = saved
+        }
+    }
+
+    // MARK: - Lo-fi
+
+    func setLoFiEnabled(_ on: Bool) {
+        lofi.enabled = on
+        applyLoFiToPlayback()
+    }
+
+    func applyLoFiPreset(_ preset: LoFiSettings.Preset) {
+        var s = LoFiSettings.preset(preset)
+        s.enabled = true
+        lofi = s
+        applyLoFiToPlayback()
+    }
+
+    /// Cambiar un control pasa a "Personalizado".
+    func updateLoFi(_ change: (inout LoFiSettings) -> Void) {
+        var s = lofi
+        change(&s)
+        s.preset = .custom
+        s.enabled = true
+        lofi = s
+    }
+
+    /// Si un chop está sonando en loop, lo reinicia para escuchar el cambio al momento.
+    func applyLoFiToPlayback() {
+        if let i = loopingSlice { playSlice(i, loop: true) }
+        else if isPlaying, let i = playingSlice { playSlice(i, loop: false) }
     }
 
     private func saveOptions() {
@@ -386,7 +428,8 @@ final class AppModel: ObservableObject {
         let count = AVAudioFrameCount(max(1, (end - start) * sampleRate))
         playingSlice = nil
         do {
-            let buffer = try AudioTools.read(url, from: startFrame, count: count)
+            let raw = try AudioTools.read(url, from: startFrame, count: count)
+            let buffer = lofi.enabled ? LoFi.process(raw, settings: lofi, seed: UInt64(max(0, startFrame))) : raw
             try player.play(buffer, startSeconds: start, loop: loop)
             isPlaying = true
             playhead = start
@@ -439,16 +482,19 @@ final class AppModel: ObservableObject {
         let r = slices[index]
         let startFrame = AVAudioFramePosition(r.lowerBound * sampleRate)
         let count = AVAudioFrameCount((r.upperBound - r.lowerBound) * sampleRate)
-        let key = "\(url.path)|\(startFrame)|\(count)|\(exportOptions.hashValue)"
+        let key = "\(url.path)|\(startFrame)|\(count)|\(exportOptions.hashValue)|\(lofi.cacheKey)"
         if let cached = exportCache[key], FileManager.default.fileExists(atPath: cached.path) {
             return cached
         }
 
         let stamp = Self.stampFormatter.string(from: Date())
-        let name = String(format: "Chop %02d %@-%03d.wav", index + 1, stamp, Int(r.lowerBound * 1000) % 1000)
+        let suffix = lofi.enabled ? " LoFi" : ""
+        let name = String(format: "Chop %02d%@ %@-%03d.wav", index + 1, suffix, stamp, Int(r.lowerBound * 1000) % 1000)
         let dest = Self.slicesFolder.appendingPathComponent(name)
         do {
-            try AudioTools.exportWAV(from: url, start: startFrame, count: count, to: dest, options: exportOptions)
+            let lofi = self.lofi
+            try AudioTools.exportWAV(from: url, start: startFrame, count: count, to: dest, options: exportOptions,
+                                     transform: lofi.enabled ? { LoFi.process($0, settings: lofi, seed: UInt64(max(0, startFrame))) } : nil)
             exportCache[key] = dest
             return dest
         } catch {

@@ -31,6 +31,7 @@
 | 👂 **Arranca sola** | Se arma y empieza a grabar en cuanto detecta audio (con pre-roll para no perder el ataque). Puede parar sola tras unos segundos de silencio. |
 | ✂️ **Chops estilo Slicex** | Corta a mano con doble clic o al vuelo con la tecla **C** mientras suena. Cada chop tiene su color y su número. |
 | 🔁 **Loop por chop** | Repite cualquier chop sin cortes para comprobar que encaja. |
+| 📼 **Sonido lo-fi de sampler clásico** | Vinilo estilo SP-303/404, 12 bits a 26 kHz con aliasing, cinta y más: se aplica al escuchar y al exportar. |
 | 🖐️ **Arrastrar y soltar** | Cada pad se arrastra como WAV a Koala Sampler, Ableton, Logic, FL Studio o el Finder. O todos a la vez. |
 | 🔍 **Zoom fino** | Pellizco en el trackpad hasta ver las muestras individuales, para cortar justo donde quieres. |
 
@@ -86,7 +87,28 @@ Abre **ChopTap** desde Aplicaciones y, si quieres, ánclala al Dock (clic derech
 - **Clic en un pad** o teclas **1–9** → dispara el chop.
 - Botón **🔁** del pad (o **L**) → lo repite en loop.
 
-### 5. Arrástralo a tu sampler
+### 5. Dale sabor lo-fi
+
+<p align="center">
+  <img src="docs/images/lofi.png" width="760" alt="Panel LO-FI con presets y controles">
+</p>
+
+Activa **LO-FI** y elige un preset; lo escuchas al momento y los chops que arrastras salen con el efecto (llevan "LoFi" en el nombre).
+
+| Preset | Inspirado en |
+|---|---|
+| **Vinilo 303** | El Vinyl Sim del SP-303: compresión sucia que "bombea", crujido de vinilo y wow. |
+| **Vinilo 404** | El Vinyl Sim del SP-404: más suave y oscuro. |
+| **12-bit 26k** | Samplers de 12 bits a 26,04 kHz sin filtro antialias: el brillo metálico del boom bap. |
+| **Sampler 90s** | 12 bits filtrado y cálido, como los samplers de rack de los 90. |
+| **Cassette** | Saturación de cinta, siseo y wow. |
+| **Destrozado** | 8 bits a 11 kHz, sucio a propósito. |
+
+En **Ajustes** del panel controlas cada etapa: bits, frecuencia de muestreo, aliasing, filtro, compresión, saturación, ruido de vinilo y wow/flutter (al tocar cualquiera pasa a *Personalizado*).
+
+> Cómo funciona: la investigación en foros (KVR) coincide en que un bitcrusher no basta; el carácter de estos samplers viene de bajar la frecuencia de muestreo **dejando el aliasing** y del **filtro de salida**. La cadena de ChopTap es: wow/flutter → reducción de muestreo (sample & hold, con o sin antialias) → bits (truncado sin dither) → ruido de vinilo → compresión → saturación → filtro de salida de 4 polos. Los presets son aproximaciones inspiradas en esos equipos, no emulaciones oficiales.
+
+### 6. Arrástralo a tu sampler
 
 Arrastra cualquier **pad** a Koala Sampler (o a tu DAW o al Finder) y suelta: se crea un WAV al momento. Con **Arrastrar todos** sueltas todos los chops de una vez.
 
@@ -146,6 +168,8 @@ Sources/ChopTap/
 ├── ContentView.swift           Interfaz: barra superior, transporte y pads
 ├── AppModel.swift              Estado, chops, reproducción y exportación
 ├── AudioTools.swift            Lectura, exportación WAV y reproductor
+├── LoFi.swift                  Efecto lo-fi (DSP) y presets
+├── LoFiView.swift              Panel LO-FI
 ├── DragOut.swift               Arrastrar archivos a otras apps
 └── TrackpadCatcher.swift       Pellizco y scroll del trackpad
 tools/

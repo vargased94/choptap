@@ -50,8 +50,10 @@ enum AudioTools {
 
     /// Exporta un rango a WAV PCM (24 bits por defecto), con fades cortos para evitar clics.
     static func exportWAV(from url: URL, start: AVAudioFramePosition, count: AVAudioFrameCount,
-                          to dest: URL, options: ExportOptions) throws {
-        let buffer = try read(url, from: start, count: count)
+                          to dest: URL, options: ExportOptions,
+                          transform: ((AVAudioPCMBuffer) -> AVAudioPCMBuffer)? = nil) throws {
+        let raw = try read(url, from: start, count: count)
+        let buffer = transform?(raw) ?? raw
         let frames = Int(buffer.frameLength)
         let channels = Int(buffer.format.channelCount)
         guard frames > 0, let data = buffer.floatChannelData else { throw RecorderError.noAudio }

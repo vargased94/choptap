@@ -20,6 +20,7 @@ struct ContentView: View {
                 } else {
                     waveformArea
                     TransportBar()
+                    if hasAudio { LoFiPanel() }
                     PadsSection()
                 }
             }
